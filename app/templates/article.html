@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ article.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container article-layout">
+    <a href="/" class="back-link">← Back to article list</a>
+
+    <article class="card shell reading-card">
+      <header class="article-header">
+        <div class="article-meta-row">
+          <span class="chip source">{{ article.source }}</span>
+          <span class="chip date">{{ article.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+        <h1>{{ article.title }}</h1>
+        <p><a class="read-more" href="{{ article.url }}" target="_blank" rel="noreferrer">Open original source <span aria-hidden="true">↗</span></a></p>
+      </header>
+      <div class="article-body">{{ article.content|clean_text }}</div>
+    </article>
+
+    <section class="card shell panel">
+      <h2>Add Comment</h2>
+      <form method="post" action="/articles/{{ article.id }}/comment-form" class="comment-form">
+        <div class="field">
+          <label for="author_name">Name (optional)</label>
+          <input id="author_name" type="text" name="author_name" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="body">Comment</label>
+          <textarea id="body" name="body" rows="4" required></textarea>
+        </div>
+        <button type="submit">Post Comment</button>
+      </form>
+
+      <h3>Comments</h3>
+      <div class="comment-list">
+        {% for comment in article.comments %}
+        <article class="comment">
+          <p class="meta">{{ comment.author_name or 'Anonymous' }} • {{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+          <p>{{ comment.body }}</p>
+        </article>
+        {% else %}
+        <p class="meta">No comments yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="card shell panel">
+      <h2>Recommended Similar Articles</h2>
+      <div class="recommendation-list">
+        {% for rec, score in recommendations %}
+        <article class="recommendation-item">
+          <a href="/articles/{{ rec.id }}/view">{{ rec.title }}</a>
+          <p class="meta">{{ rec.source }} • similarity {{ '%.3f'|format(score) }}</p>
+        </article>
+        {% else %}
+        <p class="meta">Not enough articles yet for recommendations.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+</body>
+</html>

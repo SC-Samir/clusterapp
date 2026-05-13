@@ -1,0 +1,22 @@
+{{- if .Values.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-ingest
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ingest-runner
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command: ["python", "-c", "from app.database import SessionLocal; from app.config import get_settings; from app.services.ingestion import ingest_feeds; from app.services.embeddings import EmbeddingService; db=SessionLocal(); ingest_feeds(db, get_settings().parsed_feeds, EmbeddingService()); db.close()"]
+              envFrom:
+                - configMapRef:
+                    name: {{ .Release.Name }}-config
+                - secretRef:
+                    name: {{ .Release.Name }}-secret
+{{- end }}

@@ -1,0 +1,23 @@
+[project]
+name = "lecpac-rss-demo"
+version = "0.1.0"
+description = "LecPac demo app: RSS ingestion + comments + pgvector recommendations"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi==0.115.0",
+  "uvicorn[standard]==0.30.6",
+  "sqlalchemy==2.0.35",
+  "alembic==1.13.2",
+  "psycopg[binary]==3.2.13",
+  "pgvector==0.3.4",
+  "jinja2==3.1.4",
+  "python-multipart==0.0.9",
+  "feedparser==6.0.11",
+  "httpx==0.27.2",
+  "sentence-transformers==3.1.1",
+  "apscheduler==3.10.4",
+  "pydantic-settings==2.5.2",
+  "pytest==8.3.3",
+  "pytest-asyncio==0.24.0",
+]
+

@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lecpac-rss-ingest
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ingest-runner
+              image: ghcr.io/your-org/lecpac-rss-demo:latest
+              command: ["python", "-c", "from app.database import SessionLocal; from app.config import get_settings; from app.services.ingestion import ingest_feeds; from app.services.embeddings import EmbeddingService; db=SessionLocal(); ingest_feeds(db, get_settings().parsed_feeds, EmbeddingService()); db.close()"]
+              envFrom:
+                - configMapRef:
+                    name: lecpac-rss-config
+                - secretRef:
+                    name: lecpac-rss-secret

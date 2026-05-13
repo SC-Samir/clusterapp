@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  VECTOR_DIM: {{ .Values.appConfig.VECTOR_DIM | quote }}
+  RSS_FEEDS: {{ .Values.appConfig.RSS_FEEDS | quote }}
+  INGEST_INTERVAL_MINUTES: {{ .Values.appConfig.INGEST_INTERVAL_MINUTES | quote }}
+  EMBEDDING_MODEL: {{ .Values.appConfig.EMBEDDING_MODEL | quote }}

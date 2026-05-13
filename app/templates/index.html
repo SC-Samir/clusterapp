@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LecPac RSS Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="hero card shell">
+      <p class="kicker">Editorial Tech Demo</p>
+      <h1>LecPac RSS Articles</h1>
+      <p class="subtitle">Discover the latest ingested stories with a modern reading experience, filtering, comments, and article recommendations.</p>
+    </header>
+
+    <form method="get" action="/" class="card shell filter-form">
+      <div class="field">
+        <label for="source">Filter by source</label>
+        <select id="source" name="source" aria-label="Filter by source">
+          <option value="">All sources</option>
+          {% for source in sources %}
+          <option value="{{ source }}" {% if selected_source == source %}selected{% endif %}>{{ source }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Apply Filter</button>
+    </form>
+
+    <section class="article-grid" aria-label="Article list">
+      {% for article in articles %}
+      <article class="article-card card shell" style="--i: {{ loop.index0 }};">
+        <div class="article-meta-row">
+          <span class="chip source">{{ article.source }}</span>
+          <span class="chip date">{{ article.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+        <h2><a href="/articles/{{ article.id }}/view">{{ article.title }}</a></h2>
+        {% set preview = article.content|clean_text %}
+        <p class="excerpt">{{ preview[:240] }}{% if preview|length > 240 %}...{% endif %}</p>
+        <a class="read-more" href="/articles/{{ article.id }}/view">Read article <span aria-hidden="true">→</span></a>
+      </article>
+      {% else %}
+      <article class="card shell empty-state">
+        <h2>No articles yet</h2>
+        <p>Run ingestion first using <code>POST /ingest/run</code>, then come back to explore the feed in this demo UI.</p>
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>
