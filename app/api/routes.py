@@ -7,9 +7,17 @@ from typing import Optional
 from app.config import get_settings
 from app.database import get_db
 from app.models import Article, Comment
-from app.schemas import ArticleDetail, ArticleListItem, CommentCreate, CommentOut, IngestRunOut, RecommendationOut
+from app.schemas import (
+    ArticleDetail,
+    ArticleListItem,
+    CommentCreate,
+    CommentOut,
+    IngestRunOut,
+    RecommendationOut,
+    ReindexArticleOut,
+)
 from app.services.embeddings import EmbeddingService
-from app.services.content_processing import strip_html
+from app.services.content_processing import build_embedding_text, strip_html
 from app.services.ingestion import ingest_feeds
 from app.services.recommendations import recommend_similar_articles
 
@@ -95,6 +103,17 @@ def get_recommendations(article_id: int, k: int = Query(default=5, ge=1, le=20),
 def run_ingestion(db: Session = Depends(get_db)):
     result = ingest_feeds(db, settings.parsed_feeds, get_embedder())
     return IngestRunOut(**result.__dict__)
+
+
+@router.post("/articles/{article_id}/reindex", response_model=ReindexArticleOut)
+def reindex_article(article_id: int, db: Session = Depends(get_db)):
+    article = db.query(Article).filter(Article.id == article_id).one_or_none()
+    if article is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    article.embedding = get_embedder().embed(build_embedding_text(article.title, article.content))
+    db.commit()
+    return ReindexArticleOut(article_id=article.id, reindexed=True)
 
 
 @router.get("/")

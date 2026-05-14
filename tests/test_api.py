@@ -7,6 +7,11 @@ from app.main import app
 from app.models import Article, Comment
 
 
+class FakeEmbedder:
+    def embed(self, text: str):
+        return [0.42, 0.24]
+
+
 class DummyQuery:
     def __init__(self, items):
         self.items = items
@@ -250,4 +255,54 @@ def test_home_without_source_filter():
     assert response.status_code == 200
     assert "title1" in response.text
     assert "title2" in response.text
+    app.dependency_overrides.clear()
+
+
+def test_reindex_article():
+    article = Article(
+        id=1,
+        source="Feed A",
+        rss_guid="g1",
+        title="title1",
+        url="https://example.com/1",
+        content="body1",
+        published_at=datetime.now(timezone.utc),
+        embedding=[0.1] * 384,
+    )
+    db = DummyDB(article=article)
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    from app.api import routes as routes_module
+
+    previous_embedder = routes_module._embedder
+    routes_module._embedder = FakeEmbedder()
+    client = TestClient(app)
+
+    response = client.post("/articles/1/reindex")
+
+    assert response.status_code == 200
+    assert response.json() == {"article_id": 1, "reindexed": True}
+    assert article.embedding == [0.42, 0.24]
+
+    routes_module._embedder = previous_embedder
+    app.dependency_overrides.clear()
+
+
+def test_reindex_article_not_found():
+    db = DummyDB(articles=[])
+
+    def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    response = client.post("/articles/999/reindex")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Article not found"
+
     app.dependency_overrides.clear()

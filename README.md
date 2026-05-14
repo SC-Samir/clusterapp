@@ -57,6 +57,7 @@ Shortcut script:
 - `GET /articles/{id}`
 - `POST /articles/{id}/comments`
 - `GET /articles/{id}/recommendations`
+- `POST /articles/{id}/reindex`
 - `POST /ingest/run`
 
 ## UI routes

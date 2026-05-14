@@ -21,6 +21,10 @@
         </div>
         <h1>{{ article.title }}</h1>
         <p><a class="read-more" href="{{ article.url }}" target="_blank" rel="noreferrer">Open original source <span aria-hidden="true">↗</span></a></p>
+        <div class="reindex-controls">
+          <button id="reindex-button" type="button">Reindex This Article</button>
+          <p id="reindex-status" class="meta reindex-status" aria-live="polite"></p>
+        </div>
       </header>
       <div class="article-body">{{ article.content|clean_text }}</div>
     </article>
@@ -66,5 +70,42 @@
       </div>
     </section>
   </main>
+  <script>
+    (() => {
+      const button = document.getElementById("reindex-button");
+      const status = document.getElementById("reindex-status");
+      const articleId = {{ article.id }};
+
+      if (!button || !status) {
+        return;
+      }
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        status.textContent = "Reindexing article...";
+        status.classList.remove("error", "success");
+
+        try {
+          const response = await fetch(`/articles/${articleId}/reindex`, {
+            method: "POST",
+            headers: { "Accept": "application/json" }
+          });
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.detail || "Unable to reindex article");
+          }
+
+          status.textContent = `Article #${payload.article_id} reindexed successfully.`;
+          status.classList.add("success");
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : "Unexpected error while reindexing";
+          status.classList.add("error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -58,3 +58,8 @@ class IngestRunOut(BaseModel):
     updated: int
     skipped: int
     failed_feeds: list[str]
+
+
+class ReindexArticleOut(BaseModel):
+    article_id: int
+    reindexed: bool

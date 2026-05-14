@@ -275,6 +275,27 @@ a:hover {
   margin-bottom: 1rem;
 }
 
+.reindex-controls {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.reindex-status {
+  min-height: 1.3em;
+}
+
+.reindex-status.success {
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.reindex-status.error {
+  color: #b42318;
+  font-weight: 700;
+}
+
 .article-body {
   white-space: pre-wrap;
   line-height: 1.78;
