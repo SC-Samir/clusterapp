@@ -23,7 +23,7 @@ appConfig:
   EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
 
 secrets:
-  DATABASE_URL: "postgresql+psycopg://<user>:<password>@<host>:5432/<db>"
+  existingSecret: ""
 
 cronjob:
   enabled: true

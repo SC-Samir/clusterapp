@@ -18,5 +18,5 @@ spec:
                 - configMapRef:
                     name: {{ .Release.Name }}-config
                 - secretRef:
-                    name: {{ .Release.Name }}-secret
+                    name: {{ .Values.secrets.existingSecret | default (printf "%s-secret" .Release.Name) }}
 {{- end }}
