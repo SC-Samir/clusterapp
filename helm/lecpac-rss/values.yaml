@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/sc-samir/clusterapp
-  tag: latest
+  tag: sha-a20627e
   pullPolicy: IfNotPresent
 
 service:
@@ -12,8 +12,8 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
-  host: lecpac-demo.example.com
+  className: traefik
+  host: demo.p845.lecpac-consulting.dev
   path: /
 
 appConfig:
