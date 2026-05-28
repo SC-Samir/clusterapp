@@ -23,7 +23,7 @@ appConfig:
   EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
 
 secrets:
-  existingSecret: ""
+  existingSecret: "lecpac-rss-secret"
 
 cronjob:
   enabled: true
