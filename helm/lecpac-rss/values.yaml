@@ -15,6 +15,7 @@ ingress:
   className: traefik
   host: demo.p845.lecpac-consulting.dev
   path: /
+  clusterIssuer: letsencrypt-prod
 
 appConfig:
   VECTOR_DIM: "384"
