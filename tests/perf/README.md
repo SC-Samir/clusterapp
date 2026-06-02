@@ -39,6 +39,8 @@ Run only ingest:
 ```bash
 BASE_URL="https://lecpac-rss.example.com" \
 SCENARIOS=ingest \
+INGEST_SMOKE_USERS=1 \
+INGEST_RAMP_USERS=3 \
 k6 run tests/perf/k6_lecpac_workflow.js
 ```
 
@@ -68,7 +70,7 @@ k6 run tests/perf/k6_lecpac_workflow.js
 
 ## Tuned Ramp Run Example
 
-This example increases read/comment/reindex load and keeps ingestion low-rate control traffic.
+This example increases read/comment/reindex load and keeps ingestion sequential.
 
 ```bash
 BASE_URL="https://lecpac-rss.example.com" \
@@ -79,7 +81,7 @@ COMMENT_RAMP_PRE_DURATION="3m" COMMENT_RAMP_DURATION="12m" COMMENT_RAMP_POST_DUR
 COMMENT_RAMP_PRE_VUS=4 COMMENT_RAMP_VUS=14 \
 REINDEX_RAMP_PRE_DURATION="3m" REINDEX_RAMP_DURATION="12m" REINDEX_RAMP_POST_DURATION="2m" \
 REINDEX_RAMP_PRE_VUS=2 REINDEX_RAMP_VUS=6 \
-INGEST_RAMP_RATE=9 INGEST_RAMP_DURATION="17m" INGEST_MAX_VUS=3 \
+INGEST_RAMP_USERS=6 INGEST_RAMP_MAX_DURATION="17m" \
 k6 run tests/perf/k6_lecpac_workflow.js
 ```
 
@@ -118,12 +120,10 @@ Reindex ramp:
 - `REINDEX_RAMP_DURATION` (default `8m`)
 - `REINDEX_RAMP_POST_DURATION` (default `1m`)
 
-Ingestion control traffic:
-- `INGEST_SMOKE_RATE` (default `3` req/min)
-- `INGEST_RAMP_RATE` (default `12` req/min)
-- `INGEST_RAMP_DURATION` (default `11m`)
-- `INGEST_PREALLOCATED_VUS` (default `2`)
-- `INGEST_MAX_VUS` (default `4`)
+Ingestion sequential users:
+- `INGEST_SMOKE_USERS` (default `1`)
+- `INGEST_RAMP_USERS` (default `5`)
+- `INGEST_RAMP_MAX_DURATION` (default `11m`)
 
 Thresholds (p95 ms / error-rate):
 - `READ_P95_MS` (default `1200`)
@@ -160,5 +160,5 @@ Database saturation indicators:
 - Script fails fast if no articles are found during setup.
 - `setup()` skips article discovery automatically when `SCENARIOS=ingest`.
 - No auth header is included by default because current API routes are unauthenticated.
-- Ingest arrival rates must be integers because k6 `constant-arrival-rate` does not accept fractional `rate` values.
+- Ingest runs on a single VU with shared iterations, so each ingest user starts only after the previous one finishes.
 - `unexpected EOF` usually means the app pod, ingress, or upstream connection was closed before the response completed; on this project that is especially likely during `reindex` and `ingest`, which both do embedding work.

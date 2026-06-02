@@ -38,11 +38,9 @@ const REINDEX_RAMP_VUS = Number(__ENV.REINDEX_RAMP_VUS || 4);
 const REINDEX_RAMP_DURATION = __ENV.REINDEX_RAMP_DURATION || '8m';
 const REINDEX_RAMP_POST_DURATION = __ENV.REINDEX_RAMP_POST_DURATION || '1m';
 
-const INGEST_SMOKE_RATE = Number(__ENV.INGEST_SMOKE_RATE || 3);
-const INGEST_RAMP_RATE = Number(__ENV.INGEST_RAMP_RATE || 12);
-const INGEST_RAMP_DURATION = __ENV.INGEST_RAMP_DURATION || '11m';
-const INGEST_PREALLOCATED_VUS = Number(__ENV.INGEST_PREALLOCATED_VUS || 2);
-const INGEST_MAX_VUS = Number(__ENV.INGEST_MAX_VUS || 4);
+const INGEST_SMOKE_USERS = Number(__ENV.INGEST_SMOKE_USERS || 1);
+const INGEST_RAMP_USERS = Number(__ENV.INGEST_RAMP_USERS || 5);
+const INGEST_RAMP_MAX_DURATION = __ENV.INGEST_RAMP_MAX_DURATION || '11m';
 
 const READ_P95_MS = Number(__ENV.READ_P95_MS || 1200);
 const COMMENT_P95_MS = Number(__ENV.COMMENT_P95_MS || 1600);
@@ -145,22 +143,18 @@ function buildScenarios() {
 
   if (SELECTED_OPERATIONS.includes('ingest')) {
     scenarios.run_ingest_smoke = {
-      executor: 'constant-arrival-rate',
-      rate: INGEST_SMOKE_RATE,
-      timeUnit: '1m',
-      duration: SMOKE_DURATION,
-      preAllocatedVUs: INGEST_PREALLOCATED_VUS,
-      maxVUs: INGEST_MAX_VUS,
+      executor: 'shared-iterations',
+      vus: 1,
+      iterations: INGEST_SMOKE_USERS,
+      maxDuration: SMOKE_DURATION,
       exec: 'runIngest',
       tags: { operation: 'ingest', phase: 'smoke' },
     };
     scenarios.run_ingest_ramp = {
-      executor: 'constant-arrival-rate',
-      rate: INGEST_RAMP_RATE,
-      timeUnit: '1m',
-      duration: INGEST_RAMP_DURATION,
-      preAllocatedVUs: INGEST_PREALLOCATED_VUS,
-      maxVUs: INGEST_MAX_VUS,
+      executor: 'shared-iterations',
+      vus: 1,
+      iterations: INGEST_RAMP_USERS,
+      maxDuration: INGEST_RAMP_MAX_DURATION,
       startTime: SMOKE_DURATION,
       exec: 'runIngest',
       tags: { operation: 'ingest', phase: 'ramp' },
@@ -279,7 +273,6 @@ export function setup() {
 export function readArticles(data) {
   const articleId = pickArticleId(data);
   const res = http.get(`${BASE_URL}/articles/${articleId}`, requestParams({ operation: 'read' }));
-
   readLatency.add(res.timings.duration);
 
   const ok = check(res, {
