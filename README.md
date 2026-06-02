@@ -16,7 +16,7 @@ Demo application for LecPac presentation:
 2. Configure env:
    ```bash
    cp .env.example .env
-   # edit DATABASE_URL
+   # edit DATABASE_URL if needed
    ```
 3. Run DB migration:
    ```bash
@@ -26,6 +26,10 @@ Demo application for LecPac presentation:
    ```bash
    uv run uvicorn app.main:app --reload
    ```
+
+Notes:
+- The embedding model is stored locally in `app/models/all-MiniLM-L6-v2`.
+- Local `.env` files should use `EMBEDDING_MODEL=app/models/all-MiniLM-L6-v2`.
 
 ## Local quick test with Docker Compose (Postgres + pgvector)
 
@@ -45,6 +49,23 @@ Demo application for LecPac presentation:
    ```bash
    uv run uvicorn app.main:app --reload
    ```
+
+This mode runs PostgreSQL in Docker, but keeps the FastAPI app on your machine. It still uses the local model directory at `app/models/all-MiniLM-L6-v2`.
+
+## Full Docker Compose stack
+
+Start the full stack (database + app container):
+```bash
+docker compose up --build
+```
+
+Notes:
+- The `app` container does not read `.env.docker`; its environment is defined directly in `docker-compose.yml`.
+- In the container, the model path is `/app/app/models/all-MiniLM-L6-v2`.
+- You can test ingestion with:
+  ```bash
+  curl -X POST http://127.0.0.1:8000/ingest/run
+  ```
 
 Shortcut script:
 ```bash
@@ -90,12 +111,14 @@ By default, `RSS_FEEDS` includes:
    ```
 
 Use Scalingo DB URL in `DATABASE_URL` secret value.
+Set `EMBEDDING_MODEL` to `/app/app/models/all-MiniLM-L6-v2` in containerized environments.
 
 ## Helm deployment (recommended)
 
 1. Edit chart values:
    - `helm/lecpac-rss/values.yaml`
    - Set image repository/tag, ingress host, and `secrets.DATABASE_URL`.
+   - Keep `appConfig.EMBEDDING_MODEL` pointing to `/app/app/models/all-MiniLM-L6-v2`.
 2. Install/upgrade:
    ```bash
    helm upgrade --install lecpac-rss ./helm/lecpac-rss

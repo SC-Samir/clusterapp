@@ -1,7 +1,12 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parent
+DEFAULT_EMBEDDING_MODEL = str(APP_DIR / "models" / "all-MiniLM-L6-v2")
 
 
 class Settings(BaseSettings):
@@ -13,9 +18,20 @@ class Settings(BaseSettings):
         alias="RSS_FEEDS",
     )
     ingest_interval_minutes: int = Field(30, alias="INGEST_INTERVAL_MINUTES")
-    embedding_model: str = Field("sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL")
+    embedding_model: str = Field(DEFAULT_EMBEDDING_MODEL, alias="EMBEDDING_MODEL")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
+
+    def model_post_init(self, __context) -> None:
+        candidate = Path(self.embedding_model)
+        if candidate.exists():
+            self.embedding_model = str(candidate.resolve())
+            return
+
+        if not candidate.is_absolute():
+            project_relative = PROJECT_ROOT / candidate
+            if project_relative.exists():
+                self.embedding_model = str(project_relative.resolve())
 
     @property
     def parsed_feeds(self) -> list[str]:
