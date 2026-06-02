@@ -33,8 +33,19 @@ cronjob:
 resources:
   requests:
     cpu: "100m"
-    memory: "128Mi"
+    memory: "512Mi"
   limits:
     cpu: "500m"
-    memory: "256Mi"
-  
+    memory: "1Gi"
+
+probes:
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 2
+  liveness:
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    failureThreshold: 3
+    timeoutSeconds: 2
