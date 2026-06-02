@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/your-org/lecpac-rss-demo
-  tag: latest
+  repository: ghcr.io/sc-samir/clusterapp
+  tag: sha-a20627e
   pullPolicy: IfNotPresent
 
 service:
@@ -12,9 +12,10 @@ service:
 
 ingress:
   enabled: true
-  className: nginx
-  host: lecpac-demo.example.com
+  className: traefik
+  host: demo.p845.lecpac-consulting.dev
   path: /
+  clusterIssuer: letsencrypt-prod
 
 appConfig:
   VECTOR_DIM: "384"
@@ -23,8 +24,17 @@ appConfig:
   EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
 
 secrets:
-  DATABASE_URL: "postgresql+psycopg://<user>:<password>@<host>:5432/<db>"
+  existingSecret: "lecpac-rss-secret"
 
 cronjob:
   enabled: true
   schedule: "*/30 * * * *"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+  
