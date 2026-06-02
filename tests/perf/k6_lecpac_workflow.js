@@ -10,6 +10,12 @@ if (!BASE_URL) {
 
 const LIST_LIMIT = Number(__ENV.LIST_LIMIT || 200);
 const RANDOM_SEED = Number(__ENV.RANDOM_SEED || Date.now());
+const REQUEST_TIMEOUT = __ENV.REQUEST_TIMEOUT || '30s';
+const NO_CONNECTION_REUSE = (__ENV.NO_CONNECTION_REUSE || 'false').toLowerCase() === 'true';
+const SCENARIOS = (__ENV.SCENARIOS || 'read,comment,reindex,ingest')
+  .split(',')
+  .map((item) => item.trim().toLowerCase())
+  .filter(Boolean);
 
 const SMOKE_VUS = Number(__ENV.SMOKE_VUS || 2);
 const SMOKE_DURATION = __ENV.SMOKE_DURATION || '45s';
@@ -32,10 +38,11 @@ const REINDEX_RAMP_VUS = Number(__ENV.REINDEX_RAMP_VUS || 4);
 const REINDEX_RAMP_DURATION = __ENV.REINDEX_RAMP_DURATION || '8m';
 const REINDEX_RAMP_POST_DURATION = __ENV.REINDEX_RAMP_POST_DURATION || '1m';
 
-const INGEST_SMOKE_RATE = Number(__ENV.INGEST_SMOKE_RATE || 0.05);
-const INGEST_RAMP_RATE = Number(__ENV.INGEST_RAMP_RATE || 0.2);
+const INGEST_SMOKE_RATE = Number(__ENV.INGEST_SMOKE_RATE || 3);
+const INGEST_RAMP_RATE = Number(__ENV.INGEST_RAMP_RATE || 12);
 const INGEST_RAMP_DURATION = __ENV.INGEST_RAMP_DURATION || '11m';
-const INGEST_MAX_VUS = Number(__ENV.INGEST_MAX_VUS || 2);
+const INGEST_PREALLOCATED_VUS = Number(__ENV.INGEST_PREALLOCATED_VUS || 2);
+const INGEST_MAX_VUS = Number(__ENV.INGEST_MAX_VUS || 4);
 
 const READ_P95_MS = Number(__ENV.READ_P95_MS || 1200);
 const COMMENT_P95_MS = Number(__ENV.COMMENT_P95_MS || 1600);
@@ -50,40 +57,32 @@ export const reindexLatency = new Trend('reindex_latency', true);
 export const ingestLatency = new Trend('ingest_latency', true);
 export const errorRate = new Rate('error_rate');
 
-export const options = {
-  scenarios: {
-    read_articles_smoke: {
+const ALL_OPERATIONS = ['read', 'comment', 'reindex', 'ingest'];
+const SELECTED_OPERATIONS = SCENARIOS.includes('all') ? ALL_OPERATIONS : SCENARIOS;
+const INVALID_OPERATIONS = SELECTED_OPERATIONS.filter((name) => !ALL_OPERATIONS.includes(name));
+
+if (INVALID_OPERATIONS.length > 0) {
+  fail(`Invalid SCENARIOS value(s): ${INVALID_OPERATIONS.join(', ')}. Use any of: ${ALL_OPERATIONS.join(', ')}, all`);
+}
+
+if (SELECTED_OPERATIONS.length === 0) {
+  fail(`SCENARIOS must select at least one operation: ${ALL_OPERATIONS.join(', ')}`);
+}
+
+const NEEDS_ARTICLE_IDS = SELECTED_OPERATIONS.some((name) => name !== 'ingest');
+
+function buildScenarios() {
+  const scenarios = {};
+
+  if (SELECTED_OPERATIONS.includes('read')) {
+    scenarios.read_articles_smoke = {
       executor: 'constant-vus',
       vus: SMOKE_VUS,
       duration: SMOKE_DURATION,
       exec: 'readArticles',
       tags: { operation: 'read', phase: 'smoke' },
-    },
-    post_comments_smoke: {
-      executor: 'constant-vus',
-      vus: SMOKE_VUS,
-      duration: SMOKE_DURATION,
-      exec: 'postComments',
-      tags: { operation: 'comment', phase: 'smoke' },
-    },
-    reindex_articles_smoke: {
-      executor: 'constant-vus',
-      vus: 1,
-      duration: SMOKE_DURATION,
-      exec: 'reindexArticles',
-      tags: { operation: 'reindex', phase: 'smoke' },
-    },
-    run_ingest_smoke: {
-      executor: 'constant-arrival-rate',
-      rate: INGEST_SMOKE_RATE,
-      timeUnit: '1s',
-      duration: SMOKE_DURATION,
-      preAllocatedVUs: 1,
-      maxVUs: INGEST_MAX_VUS,
-      exec: 'runIngest',
-      tags: { operation: 'ingest', phase: 'smoke' },
-    },
-    read_articles_ramp: {
+    };
+    scenarios.read_articles_ramp = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
@@ -95,8 +94,18 @@ export const options = {
       startTime: SMOKE_DURATION,
       exec: 'readArticles',
       tags: { operation: 'read', phase: 'ramp' },
-    },
-    post_comments_ramp: {
+    };
+  }
+
+  if (SELECTED_OPERATIONS.includes('comment')) {
+    scenarios.post_comments_smoke = {
+      executor: 'constant-vus',
+      vus: SMOKE_VUS,
+      duration: SMOKE_DURATION,
+      exec: 'postComments',
+      tags: { operation: 'comment', phase: 'smoke' },
+    };
+    scenarios.post_comments_ramp = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
@@ -108,8 +117,18 @@ export const options = {
       startTime: SMOKE_DURATION,
       exec: 'postComments',
       tags: { operation: 'comment', phase: 'ramp' },
-    },
-    reindex_articles_ramp: {
+    };
+  }
+
+  if (SELECTED_OPERATIONS.includes('reindex')) {
+    scenarios.reindex_articles_smoke = {
+      executor: 'constant-vus',
+      vus: 1,
+      duration: SMOKE_DURATION,
+      exec: 'reindexArticles',
+      tags: { operation: 'reindex', phase: 'smoke' },
+    };
+    scenarios.reindex_articles_ramp = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
@@ -121,26 +140,61 @@ export const options = {
       startTime: SMOKE_DURATION,
       exec: 'reindexArticles',
       tags: { operation: 'reindex', phase: 'ramp' },
-    },
-    run_ingest_ramp: {
+    };
+  }
+
+  if (SELECTED_OPERATIONS.includes('ingest')) {
+    scenarios.run_ingest_smoke = {
+      executor: 'constant-arrival-rate',
+      rate: INGEST_SMOKE_RATE,
+      timeUnit: '1m',
+      duration: SMOKE_DURATION,
+      preAllocatedVUs: INGEST_PREALLOCATED_VUS,
+      maxVUs: INGEST_MAX_VUS,
+      exec: 'runIngest',
+      tags: { operation: 'ingest', phase: 'smoke' },
+    };
+    scenarios.run_ingest_ramp = {
       executor: 'constant-arrival-rate',
       rate: INGEST_RAMP_RATE,
-      timeUnit: '1s',
+      timeUnit: '1m',
       duration: INGEST_RAMP_DURATION,
-      preAllocatedVUs: 1,
+      preAllocatedVUs: INGEST_PREALLOCATED_VUS,
       maxVUs: INGEST_MAX_VUS,
       startTime: SMOKE_DURATION,
       exec: 'runIngest',
       tags: { operation: 'ingest', phase: 'ramp' },
-    },
-  },
-  thresholds: {
+    };
+  }
+
+  return scenarios;
+}
+
+function buildThresholds() {
+  const thresholds = {
     error_rate: [`rate<${ERROR_RATE_MAX}`],
-    read_latency: [`p(95)<${READ_P95_MS}`],
-    comment_latency: [`p(95)<${COMMENT_P95_MS}`],
-    reindex_latency: [`p(95)<${REINDEX_P95_MS}`],
-    ingest_latency: [`p(95)<${INGEST_P95_MS}`],
-  },
+  };
+
+  if (SELECTED_OPERATIONS.includes('read')) {
+    thresholds.read_latency = [`p(95)<${READ_P95_MS}`];
+  }
+  if (SELECTED_OPERATIONS.includes('comment')) {
+    thresholds.comment_latency = [`p(95)<${COMMENT_P95_MS}`];
+  }
+  if (SELECTED_OPERATIONS.includes('reindex')) {
+    thresholds.reindex_latency = [`p(95)<${REINDEX_P95_MS}`];
+  }
+  if (SELECTED_OPERATIONS.includes('ingest')) {
+    thresholds.ingest_latency = [`p(95)<${INGEST_P95_MS}`];
+  }
+
+  return thresholds;
+}
+
+export const options = {
+  noConnectionReuse: NO_CONNECTION_REUSE,
+  scenarios: buildScenarios(),
+  thresholds: buildThresholds(),
 };
 
 function makeRng(seed) {
@@ -169,6 +223,14 @@ function commonHeaders() {
   };
 }
 
+function requestParams(tags) {
+  return {
+    headers: commonHeaders(),
+    tags,
+    timeout: REQUEST_TIMEOUT,
+  };
+}
+
 function pickArticleId(data) {
   return randomItem(data.articleIds);
 }
@@ -180,8 +242,12 @@ function commentPayload() {
 }
 
 export function setup() {
+  if (!NEEDS_ARTICLE_IDS) {
+    return { articleIds: [] };
+  }
+
   const listUrl = `${BASE_URL}/articles?limit=${LIST_LIMIT}`;
-  const res = http.get(listUrl, { headers: commonHeaders(), tags: { operation: 'setup_list' } });
+  const res = http.get(listUrl, requestParams({ operation: 'setup_list' }));
 
   const ok = check(res, {
     'setup list status is 200': (r) => r.status === 200,
@@ -212,10 +278,7 @@ export function setup() {
 
 export function readArticles(data) {
   const articleId = pickArticleId(data);
-  const res = http.get(`${BASE_URL}/articles/${articleId}`, {
-    headers: commonHeaders(),
-    tags: { operation: 'read' },
-  });
+  const res = http.get(`${BASE_URL}/articles/${articleId}`, requestParams({ operation: 'read' }));
 
   readLatency.add(res.timings.duration);
 
@@ -235,10 +298,11 @@ export function readArticles(data) {
 
 export function postComments(data) {
   const articleId = pickArticleId(data);
-  const res = http.post(`${BASE_URL}/articles/${articleId}/comments`, commentPayload(), {
-    headers: commonHeaders(),
-    tags: { operation: 'comment' },
-  });
+  const res = http.post(
+    `${BASE_URL}/articles/${articleId}/comments`,
+    commentPayload(),
+    requestParams({ operation: 'comment' }),
+  );
 
   commentLatency.add(res.timings.duration);
 
@@ -265,10 +329,7 @@ export function postComments(data) {
 
 export function reindexArticles(data) {
   const articleId = pickArticleId(data);
-  const res = http.post(`${BASE_URL}/articles/${articleId}/reindex`, null, {
-    headers: commonHeaders(),
-    tags: { operation: 'reindex' },
-  });
+  const res = http.post(`${BASE_URL}/articles/${articleId}/reindex`, null, requestParams({ operation: 'reindex' }));
 
   reindexLatency.add(res.timings.duration);
 
@@ -294,10 +355,7 @@ export function reindexArticles(data) {
 }
 
 export function runIngest() {
-  const res = http.post(`${BASE_URL}/ingest/run`, null, {
-    headers: commonHeaders(),
-    tags: { operation: 'ingest' },
-  });
+  const res = http.post(`${BASE_URL}/ingest/run`, null, requestParams({ operation: 'ingest' }));
 
   ingestLatency.add(res.timings.duration);
 
