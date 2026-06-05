@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: scsamir/newproject5-app
-  tag: latest
+  tag: v1
   pullPolicy: IfNotPresent
 
 service:
