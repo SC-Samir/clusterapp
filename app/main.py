@@ -23,11 +23,8 @@ async def lifespan(app: FastAPI):
         global embedder
         if embedder is None:
             embedder = EmbeddingService()
-        db = SessionLocal()
-        try:
+        with SessionLocal() as db:
             ingest_feeds(db, settings.parsed_feeds, embedder)
-        finally:
-            db.close()
 
     scheduler.add_job(
         scheduled_ingest,

@@ -12,6 +12,11 @@ DEFAULT_EMBEDDING_MODEL = str(APP_DIR / "models" / "all-MiniLM-L6-v2")
 class Settings(BaseSettings):
     app_name: str = "LecPac RSS Demo"
     database_url: str = Field("sqlite:///./local.db", alias="DATABASE_URL")
+    db_pool_size: int = Field(5, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(2, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(10, alias="DB_POOL_TIMEOUT")
+    db_pool_recycle: int = Field(1800, alias="DB_POOL_RECYCLE")
+    db_connect_timeout: int = Field(5, alias="DB_CONNECT_TIMEOUT")
     vector_dim: int = Field(384, alias="VECTOR_DIM")
     rss_feeds: str = Field(
         "https://hnrss.org/frontpage,https://www.reddit.com/r/programming/.rss,https://techcrunch.com/feed/,https://www.theverge.com/rss/index.xml,https://feeds.arstechnica.com/arstechnica/index,https://www.infoq.com/feed/",

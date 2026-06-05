@@ -17,6 +17,7 @@ class Article(Base):
         UniqueConstraint("rss_guid", name="uq_articles_rss_guid"),
         UniqueConstraint("url", name="uq_articles_url"),
         Index("ix_articles_published_at", "published_at"),
+        Index("ix_articles_source_published_at", "source", "published_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -39,6 +40,7 @@ class Article(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
+    __table_args__ = (Index("ix_comments_article_id", "article_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     article_id: Mapped[int] = mapped_column(ForeignKey("articles.id", ondelete="CASCADE"), nullable=False)
