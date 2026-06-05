@@ -59,10 +59,10 @@
     <section class="card shell panel">
       <h2>Recommended Similar Articles</h2>
       <div class="recommendation-list">
-        {% for rec, score in recommendations %}
+        {% for rec in recommendations %}
         <article class="recommendation-item">
           <a href="/articles/{{ rec.id }}/view">{{ rec.title }}</a>
-          <p class="meta">{{ rec.source }} • similarity {{ '%.3f'|format(score) }}</p>
+          <p class="meta">{{ rec.source }} • similarity {{ '%.3f'|format(rec.similarity) }}</p>
         </article>
         {% else %}
         <p class="meta">Not enough articles yet for recommendations.</p>

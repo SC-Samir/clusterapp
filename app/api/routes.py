@@ -231,14 +231,14 @@ async def run_ingestion(db: AsyncSession = Depends(get_async_db)):
 
 @router.post("/articles/{article_id}/reindex", response_model=ReindexArticleOut)
 async def reindex_article(article_id: int, db: AsyncSession = Depends(get_async_db)):
-    article = await get_article_or_404(db, article_id)
+    article = await get_article_or_404(db, article_id, with_embedding=True)
     article.embedding = await asyncio.to_thread(
         get_embedder().embed,
         build_embedding_text(article.title, article.content),
     )
     await db.commit()
     invalidate_article_cache(article_id)
-    return ReindexArticleOut(article_id=article.id, reindexed=True)
+    return ReindexArticleOut(article_id=article_id, reindexed=True)
 
 
 @router.get("/")

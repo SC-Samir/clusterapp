@@ -86,7 +86,7 @@ def build_async_engine():
 engine = build_engine()
 async_engine = build_async_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-AsyncSessionLocal = sessionmaker(async_engine, class_=AsyncSession, autocommit=False, autoflush=False)
+AsyncSessionLocal = sessionmaker(async_engine, class_=AsyncSession, autocommit=False, autoflush=False, expire_on_commit=False)
 Base = declarative_base()
 
 
@@ -100,4 +100,7 @@ def get_db() -> Generator[Session, None, None]:
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as db:
-        yield db
+        try:
+            yield db
+        finally:
+            await db.close()

@@ -161,7 +161,7 @@ async def ingest_feeds(db: AsyncSession, feed_urls: list[str], embedder) -> Inge
                 if existing.published_at != entry.published_at:
                     existing.published_at = entry.published_at
                     changed = True
-                if existing.embedding != vector:
+                if list(existing.embedding) != vector:
                     existing.embedding = vector
                     changed = True
 
