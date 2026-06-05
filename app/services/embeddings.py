@@ -11,6 +11,7 @@ class EmbeddingService:
             settings.embedding_model,
             device="cpu",
             local_files_only=True,
+            model_kwargs={"use_safetensors": False},
         )
 
     def embed(self, text: str) -> list[float]:
