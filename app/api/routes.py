@@ -17,6 +17,7 @@ from app.schemas import (
     ReindexArticleOut,
 )
 from app.services.embeddings import EmbeddingService
+from app.services.cache import TTLCache
 from app.services.content_processing import build_embedding_text, strip_html
 from app.services.ingestion import ingest_feeds
 from app.services.recommendations import recommend_similar_articles
@@ -26,6 +27,16 @@ settings = get_settings()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["clean_text"] = strip_html
 _embedder = None
+read_cache = TTLCache(ttl_seconds=5.0)
+
+
+def invalidate_article_cache(article_id: Optional[int] = None) -> None:
+    read_cache.invalidate_prefix("articles:list:")
+    read_cache.invalidate_prefix("home:")
+    if article_id is not None:
+        read_cache.invalidate_prefix(f"articles:detail:{article_id}")
+        read_cache.invalidate_prefix(f"articles:recommendations:{article_id}:")
+        read_cache.invalidate_prefix(f"articles:view:{article_id}")
 
 
 def get_embedder() -> EmbeddingService:
@@ -42,24 +53,31 @@ def list_articles(
     source: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Article)
-    if source:
-        query = query.filter(Article.source == source)
+    def load() -> list[ArticleListItem]:
+        query = db.query(Article)
+        if source:
+            query = query.filter(Article.source == source)
+        articles = query.order_by(Article.published_at.desc()).offset(offset).limit(limit).all()
+        return [ArticleListItem.model_validate(article) for article in articles]
 
-    return query.order_by(Article.published_at.desc()).offset(offset).limit(limit).all()
+    cache_key = f"articles:list:{source or '*'}:{limit}:{offset}"
+    return read_cache.get_or_set(cache_key, load)
 
 
 @router.get("/articles/{article_id}", response_model=ArticleDetail)
 def get_article(article_id: int, db: Session = Depends(get_db)):
-    article = (
-        db.query(Article)
-        .options(selectinload(Article.comments))
-        .filter(Article.id == article_id)
-        .one_or_none()
-    )
-    if article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
-    return article
+    def load() -> ArticleDetail:
+        article = (
+            db.query(Article)
+            .options(selectinload(Article.comments))
+            .filter(Article.id == article_id)
+            .one_or_none()
+        )
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
+        return ArticleDetail.model_validate(article)
+
+    return read_cache.get_or_set(f"articles:detail:{article_id}", load)
 
 
 @router.post("/articles/{article_id}/comments", response_model=CommentOut)
@@ -76,32 +94,37 @@ def post_comment(article_id: int, payload: CommentCreate, db: Session = Depends(
     db.add(comment)
     db.commit()
     db.refresh(comment)
+    invalidate_article_cache(article_id)
     return comment
 
 
 @router.get("/articles/{article_id}/recommendations", response_model=list[RecommendationOut])
 def get_recommendations(article_id: int, k: int = Query(default=5, ge=1, le=20), db: Session = Depends(get_db)):
-    article = db.query(Article).filter(Article.id == article_id).one_or_none()
-    if article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
+    def load() -> list[RecommendationOut]:
+        article = db.query(Article).filter(Article.id == article_id).one_or_none()
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
 
-    recs = recommend_similar_articles(db, article, limit=k)
-    return [
-        RecommendationOut(
-            id=item.id,
-            source=item.source,
-            title=item.title,
-            url=item.url,
-            published_at=item.published_at,
-            similarity=score,
-        )
-        for item, score in recs
-    ]
+        recs = recommend_similar_articles(db, article, limit=k)
+        return [
+            RecommendationOut(
+                id=item.id,
+                source=item.source,
+                title=item.title,
+                url=item.url,
+                published_at=item.published_at,
+                similarity=score,
+            )
+            for item, score in recs
+        ]
+
+    return read_cache.get_or_set(f"articles:recommendations:{article_id}:{k}", load)
 
 
 @router.post("/ingest/run", response_model=IngestRunOut)
 def run_ingestion(db: Session = Depends(get_db)):
     result = ingest_feeds(db, settings.parsed_feeds, get_embedder())
+    invalidate_article_cache()
     return IngestRunOut(**result.__dict__)
 
 
@@ -113,16 +136,21 @@ def reindex_article(article_id: int, db: Session = Depends(get_db)):
 
     article.embedding = get_embedder().embed(build_embedding_text(article.title, article.content))
     db.commit()
+    invalidate_article_cache(article_id)
     return ReindexArticleOut(article_id=article.id, reindexed=True)
 
 
 @router.get("/")
 def home(request: Request, source: Optional[str] = Query(default=None), db: Session = Depends(get_db)):
-    sources = [row[0] for row in db.query(Article.source).distinct().order_by(Article.source.asc()).all()]
-    query = db.query(Article)
-    if source:
-        query = query.filter(Article.source == source)
-    articles = query.order_by(Article.published_at.desc()).limit(50).all()
+    def load():
+        sources = [row[0] for row in db.query(Article.source).distinct().order_by(Article.source.asc()).all()]
+        query = db.query(Article)
+        if source:
+            query = query.filter(Article.source == source)
+        articles = query.order_by(Article.published_at.desc()).limit(50).all()
+        return sources, articles
+
+    sources, articles = read_cache.get_or_set(f"home:{source or '*'}", load)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -132,16 +160,19 @@ def home(request: Request, source: Optional[str] = Query(default=None), db: Sess
 
 @router.get("/articles/{article_id}/view")
 def article_view(request: Request, article_id: int, db: Session = Depends(get_db)):
-    article = (
-        db.query(Article)
-        .options(selectinload(Article.comments))
-        .filter(Article.id == article_id)
-        .one_or_none()
-    )
-    if article is None:
-        raise HTTPException(status_code=404, detail="Article not found")
+    def load():
+        article = (
+            db.query(Article)
+            .options(selectinload(Article.comments))
+            .filter(Article.id == article_id)
+            .one_or_none()
+        )
+        if article is None:
+            raise HTTPException(status_code=404, detail="Article not found")
+        recommendations = recommend_similar_articles(db, article, limit=5)
+        return article, recommendations
 
-    recommendations = recommend_similar_articles(db, article, limit=5)
+    article, recommendations = read_cache.get_or_set(f"articles:view:{article_id}", load)
     return templates.TemplateResponse(
         request,
         "article.html",
@@ -166,4 +197,5 @@ def post_comment_form(
     comment = Comment(article_id=article_id, author_name=author_name or None, body=body.strip())
     db.add(comment)
     db.commit()
+    invalidate_article_cache(article_id)
     return RedirectResponse(url=f"/articles/{article_id}/view", status_code=303)
