@@ -2,6 +2,7 @@ from collections.abc import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
@@ -23,6 +24,14 @@ def build_engine():
         "keepalives_interval": 10,
         "keepalives_count": 5,
     }
+
+    if settings.db_use_null_pool:
+        return create_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            poolclass=NullPool,
+            connect_args=connect_args,
+        )
 
     return create_engine(
         settings.database_url,

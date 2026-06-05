@@ -69,9 +69,19 @@ class DummyDB:
     def commit(self):
         pass
 
+    def rollback(self):
+        pass
+
     def refresh(self, item):
         item.id = 1
         item.created_at = datetime.now(timezone.utc)
+
+    def get(self, model, item_id):
+        if model is Article:
+            for article in self.articles:
+                if article.id == item_id:
+                    return article
+        return None
 
 
 def test_post_comment():

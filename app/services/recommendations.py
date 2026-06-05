@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models import Article
 
@@ -8,6 +8,15 @@ def recommend_similar_articles(db: Session, article: Article, limit: int = 5) ->
     distance_expr = Article.embedding.cosine_distance(article.embedding)
     stmt = (
         select(Article, distance_expr.label("distance"))
+        .options(
+            load_only(
+                Article.id,
+                Article.source,
+                Article.title,
+                Article.url,
+                Article.published_at,
+            )
+        )
         .where(Article.id != article.id)
         .order_by(distance_expr.asc())
         .limit(limit)
