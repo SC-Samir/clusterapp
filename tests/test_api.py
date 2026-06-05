@@ -1,10 +1,16 @@
+import os
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.sql.dml import Insert
 
-from app.database import get_db
+os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+
+from app.database import get_async_db
 from app.main import app
-from app.models import Article, Comment
+from app.models import Article
 
 
 class FakeEmbedder:
@@ -12,39 +18,27 @@ class FakeEmbedder:
         return [0.42, 0.24]
 
 
-class DummyQuery:
+class DummyScalarResult:
     def __init__(self, items):
-        self.items = items
-
-    def filter(self, *args, **kwargs):
-        for expr in args:
-            left = getattr(expr, "left", None)
-            right = getattr(expr, "right", None)
-            if getattr(left, "key", None) == "source":
-                source_value = getattr(right, "value", None)
-                self.items = [item for item in self.items if item.source == source_value]
-        return self
-
-    def one_or_none(self):
-        return self.items[0] if self.items else None
-
-    def options(self, *args, **kwargs):
-        return self
-
-    def order_by(self, *args, **kwargs):
-        return self
-
-    def distinct(self):
-        return self
-
-    def offset(self, *args, **kwargs):
-        return self
-
-    def limit(self, *args, **kwargs):
-        return self
+        self._items = items
 
     def all(self):
-        return self.items
+        return self._items
+
+
+class DummyExecResult:
+    def __init__(self, *, items=None, row=None):
+        self._items = items or []
+        self._row = row
+
+    def scalars(self):
+        return DummyScalarResult(self._items)
+
+    def one(self):
+        return self._row
+
+    def all(self):
+        return self._items
 
 
 class DummyDB:
@@ -53,55 +47,88 @@ class DummyDB:
         self.articles = articles or ([article] if article else [])
         self.saved_comment = None
 
-    def query(self, model):
-        if model is Article:
-            return DummyQuery(self.articles)
-        if model is Comment:
-            return DummyQuery([])
-        if str(model) == "Article.source":
-            sources = sorted({item.source for item in self.articles})
-            return DummyQuery([(source,) for source in sources])
-        return DummyQuery([])
+    async def execute(self, stmt):
+        if isinstance(stmt, Insert):
+            params = stmt.compile().params
+            self.saved_comment = SimpleNamespace(
+                id=1,
+                article_id=params["article_id"],
+                author_name=params["author_name"],
+                body=params["body"],
+                created_at=datetime.now(timezone.utc),
+            )
+            return DummyExecResult(row=self.saved_comment)
 
-    def add(self, item):
-        self.saved_comment = item
+        items = list(self.articles)
+        for expr in getattr(stmt, "_where_criteria", ()):
+            left = getattr(expr, "left", None)
+            right = getattr(expr, "right", None)
+            if getattr(left, "key", None) == "source":
+                source_value = getattr(right, "value", None)
+                items = [item for item in items if item.source == source_value]
 
-    def commit(self):
+        selected_columns = getattr(stmt, "selected_columns", None)
+        if selected_columns is not None:
+            keys = [getattr(column, "key", None) for column in selected_columns]
+            if keys == ["source"]:
+                sources = sorted({item.source for item in self.articles})
+                return DummyExecResult(items=sources)
+
+        return DummyExecResult(items=items)
+
+    async def commit(self):
         pass
 
-    def rollback(self):
+    async def rollback(self):
         pass
 
-    def refresh(self, item):
+    async def refresh(self, item):
         item.id = 1
         item.created_at = datetime.now(timezone.utc)
 
-    def get(self, model, item_id):
-        if model is Article:
-            for article in self.articles:
-                if article.id == item_id:
-                    return article
+    async def get(self, model, item_id, options=None):
+        for article in self.articles:
+            if article.id == item_id:
+                return article
         return None
 
 
-def test_post_comment():
-    article = Article(
-        id=1,
-        source="feed",
-        rss_guid="g",
-        title="title",
-        url="https://example.com",
-        content="body",
+def build_article(article_id: int, source: str, suffix: str) -> Article:
+    return Article(
+        id=article_id,
+        source=source,
+        rss_guid=f"g{suffix}",
+        title=f"title{suffix}",
+        url=f"https://example.com/{suffix}",
+        content=f"body{suffix}",
         published_at=datetime.now(timezone.utc),
         embedding=[0.1] * 384,
     )
 
-    db = DummyDB(article=article)
 
-    def override_get_db():
+@pytest.fixture(autouse=True)
+def clear_app_state():
+    from app.api import routes as routes_module
+
+    routes_module.read_cache.clear()
+    routes_module.source_cache.clear()
+    app.dependency_overrides.clear()
+    yield
+    routes_module.read_cache.clear()
+    routes_module.source_cache.clear()
+    app.dependency_overrides.clear()
+
+
+def override_db(db):
+    async def _override():
         yield db
 
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_async_db] = _override
+
+
+def test_post_comment():
+    db = DummyDB(article=build_article(1, "feed", "1"))
+    override_db(db)
     client = TestClient(app)
 
     response = client.post("/articles/1/comments", json={"author_name": "Sam", "body": "Nice"})
@@ -110,76 +137,21 @@ def test_post_comment():
     assert response.json()["body"] == "Nice"
     assert db.saved_comment is not None
 
-    app.dependency_overrides.clear()
-
 
 def test_list_articles_without_source_filter():
-    articles = [
-        Article(
-            id=1,
-            source="Feed A",
-            rss_guid="g1",
-            title="title1",
-            url="https://example.com/1",
-            content="body1",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-        Article(
-            id=2,
-            source="Feed B",
-            rss_guid="g2",
-            title="title2",
-            url="https://example.com/2",
-            content="body2",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-    ]
-    db = DummyDB(articles=articles)
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    db = DummyDB(articles=[build_article(1, "Feed A", "1"), build_article(2, "Feed B", "2")])
+    override_db(db)
     client = TestClient(app)
 
     response = client.get("/articles")
 
     assert response.status_code == 200
     assert len(response.json()) == 2
-    app.dependency_overrides.clear()
 
 
 def test_list_articles_with_source_filter():
-    articles = [
-        Article(
-            id=1,
-            source="Feed A",
-            rss_guid="g1",
-            title="title1",
-            url="https://example.com/1",
-            content="body1",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-        Article(
-            id=2,
-            source="Feed B",
-            rss_guid="g2",
-            title="title2",
-            url="https://example.com/2",
-            content="body2",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-    ]
-    db = DummyDB(articles=articles)
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    db = DummyDB(articles=[build_article(1, "Feed A", "1"), build_article(2, "Feed B", "2")])
+    override_db(db)
     client = TestClient(app)
 
     response = client.get("/articles", params={"source": "Feed A"})
@@ -187,38 +159,11 @@ def test_list_articles_with_source_filter():
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]["source"] == "Feed A"
-    app.dependency_overrides.clear()
 
 
 def test_home_with_source_filter():
-    articles = [
-        Article(
-            id=1,
-            source="Feed A",
-            rss_guid="g1",
-            title="title1",
-            url="https://example.com/1",
-            content="body1",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-        Article(
-            id=2,
-            source="Feed B",
-            rss_guid="g2",
-            title="title2",
-            url="https://example.com/2",
-            content="body2",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-    ]
-    db = DummyDB(articles=articles)
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    db = DummyDB(articles=[build_article(1, "Feed A", "1"), build_article(2, "Feed B", "2")])
+    override_db(db)
     client = TestClient(app)
 
     response = client.get("/", params={"source": "Feed A"})
@@ -226,38 +171,11 @@ def test_home_with_source_filter():
     assert response.status_code == 200
     assert "Feed A" in response.text
     assert "Feed B" in response.text
-    app.dependency_overrides.clear()
 
 
 def test_home_without_source_filter():
-    articles = [
-        Article(
-            id=1,
-            source="Feed A",
-            rss_guid="g1",
-            title="title1",
-            url="https://example.com/1",
-            content="body1",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-        Article(
-            id=2,
-            source="Feed B",
-            rss_guid="g2",
-            title="title2",
-            url="https://example.com/2",
-            content="body2",
-            published_at=datetime.now(timezone.utc),
-            embedding=[0.1] * 384,
-        ),
-    ]
-    db = DummyDB(articles=articles)
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    db = DummyDB(articles=[build_article(1, "Feed A", "1"), build_article(2, "Feed B", "2")])
+    override_db(db)
     client = TestClient(app)
 
     response = client.get("/")
@@ -265,26 +183,12 @@ def test_home_without_source_filter():
     assert response.status_code == 200
     assert "title1" in response.text
     assert "title2" in response.text
-    app.dependency_overrides.clear()
 
 
 def test_reindex_article():
-    article = Article(
-        id=1,
-        source="Feed A",
-        rss_guid="g1",
-        title="title1",
-        url="https://example.com/1",
-        content="body1",
-        published_at=datetime.now(timezone.utc),
-        embedding=[0.1] * 384,
-    )
+    article = build_article(1, "Feed A", "1")
     db = DummyDB(article=article)
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    override_db(db)
     from app.api import routes as routes_module
 
     previous_embedder = routes_module._embedder
@@ -298,21 +202,14 @@ def test_reindex_article():
     assert article.embedding == [0.42, 0.24]
 
     routes_module._embedder = previous_embedder
-    app.dependency_overrides.clear()
 
 
 def test_reindex_article_not_found():
     db = DummyDB(articles=[])
-
-    def override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = override_get_db
+    override_db(db)
     client = TestClient(app)
 
     response = client.post("/articles/999/reindex")
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Article not found"
-
-    app.dependency_overrides.clear()

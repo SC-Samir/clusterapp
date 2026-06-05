@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 from threading import Event, Lock
 from time import monotonic
@@ -11,8 +12,10 @@ class TTLCache:
     def __init__(self, ttl_seconds: float = 5.0) -> None:
         self.ttl_seconds = ttl_seconds
         self._lock = Lock()
+        self._async_lock = asyncio.Lock()
         self._items: dict[str, tuple[float, object]] = {}
         self._inflight: dict[str, Event] = {}
+        self._async_inflight: dict[str, asyncio.Event] = {}
 
     def get_or_set(self, key: str, factory: Callable[[], T]) -> T:
         while True:
@@ -48,6 +51,43 @@ class TTLCache:
                 return value
 
             event.wait()
+
+    async def get_or_set_async(self, key: str, factory: Callable[[], "asyncio.Future[T] | T"]) -> T:
+        while True:
+            now = monotonic()
+            should_compute = False
+
+            async with self._async_lock:
+                cached = self._items.get(key)
+                if cached is not None and cached[0] > now:
+                    return cached[1]  # type: ignore[return-value]
+
+                event = self._async_inflight.get(key)
+                if event is None:
+                    event = asyncio.Event()
+                    self._async_inflight[key] = event
+                    should_compute = True
+
+            if should_compute:
+                try:
+                    value = factory()
+                    if asyncio.iscoroutine(value):
+                        value = await value
+                except Exception:
+                    async with self._async_lock:
+                        current_event = self._async_inflight.pop(key, None)
+                        if current_event is not None:
+                            current_event.set()
+                    raise
+
+                async with self._async_lock:
+                    self._items[key] = (monotonic() + self.ttl_seconds, value)
+                    current_event = self._async_inflight.pop(key, None)
+                    if current_event is not None:
+                        current_event.set()
+                return value
+
+            await event.wait()
 
     def invalidate_prefix(self, prefix: str) -> None:
         with self._lock:

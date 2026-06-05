@@ -1,4 +1,6 @@
+import asyncio
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
@@ -6,13 +8,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
 from app.config import get_settings
-from app.database import SessionLocal
+from app.database import AsyncSessionLocal
 from app.services.embeddings import EmbeddingService
 from app.services.ingestion import ingest_feeds
 
 settings = get_settings()
 scheduler = BackgroundScheduler()
-from typing import Optional
 
 embedder: Optional[EmbeddingService] = None
 
@@ -23,8 +24,11 @@ async def lifespan(app: FastAPI):
         global embedder
         if embedder is None:
             embedder = EmbeddingService()
-        with SessionLocal() as db:
-            ingest_feeds(db, settings.parsed_feeds, embedder)
+        asyncio.run(run_scheduled_ingest())
+
+    async def run_scheduled_ingest() -> None:
+        async with AsyncSessionLocal() as db:
+            await ingest_feeds(db, settings.parsed_feeds, embedder)
 
     scheduler.add_job(
         scheduled_ingest,

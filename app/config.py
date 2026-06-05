@@ -43,6 +43,22 @@ class Settings(BaseSettings):
     def parsed_feeds(self) -> list[str]:
         return [f.strip() for f in self.rss_feeds.split(",") if f.strip()]
 
+    @property
+    def sync_database_url(self) -> str:
+        url = self.database_url
+        if url.startswith("sqlite+aiosqlite://"):
+            return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
+        return url
+
+    @property
+    def async_database_url(self) -> str:
+        url = self.database_url
+        if url.startswith("sqlite://") and not url.startswith("sqlite+aiosqlite://"):
+            return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url
+
 
 @lru_cache
 def get_settings() -> Settings:
