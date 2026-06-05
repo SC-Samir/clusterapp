@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/sc-samir/clusterapp
-  tag: sha-794d66f
+  repository: scsamir/newproject5-app
+  tag: latest
   pullPolicy: IfNotPresent
 
 service:
