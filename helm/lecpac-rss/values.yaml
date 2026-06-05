@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/sc-samir/clusterapp
-  tag: sha-fed49b8
+  tag: sha-21f56a9
   pullPolicy: IfNotPresent
 
 service:
