@@ -35,7 +35,7 @@ resources:
     cpu: "1"
     memory: "900Mi"
   limits:
-    cpu: "2"
+    cpu: "3"
     memory: "1.5Gi"
 
 probes:
