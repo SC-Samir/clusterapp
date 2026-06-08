@@ -42,10 +42,10 @@ probes:
   readiness:
     initialDelaySeconds: 10
     periodSeconds: 10
-    failureThreshold: 3
+    failureThreshold: 10
     timeoutSeconds: 3
   liveness:
     initialDelaySeconds: 20
     periodSeconds: 10
-    failureThreshold: 3
+    failureThreshold: 10
     timeoutSeconds: 3
