@@ -101,6 +101,7 @@ def build_article(article_id: int, source: str, suffix: str) -> Article:
         title=f"title{suffix}",
         url=f"https://example.com/{suffix}",
         content=f"body{suffix}",
+        content_preview=f"body{suffix}",
         published_at=datetime.now(timezone.utc),
         embedding=[0.1] * 384,
     )
@@ -110,12 +111,12 @@ def build_article(article_id: int, source: str, suffix: str) -> Article:
 def clear_app_state():
     from app.api import routes as routes_module
 
-    routes_module.read_cache.clear()
-    routes_module.source_cache.clear()
+    routes_module.read_cache._items.clear()
+    routes_module.source_cache._items.clear()
     app.dependency_overrides.clear()
     yield
-    routes_module.read_cache.clear()
-    routes_module.source_cache.clear()
+    routes_module.read_cache._items.clear()
+    routes_module.source_cache._items.clear()
     app.dependency_overrides.clear()
 
 

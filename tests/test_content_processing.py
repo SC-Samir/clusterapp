@@ -1,4 +1,9 @@
-from app.core.services.content_processing import build_embedding_text, sentence_chunks, strip_html
+from app.core.services.content_processing import (
+    build_embedding_text,
+    make_preview,
+    sentence_chunks,
+    strip_html,
+)
 
 
 def test_strip_html_basic():
@@ -23,6 +28,19 @@ def test_sentence_chunking_limits():
 
 
 def test_build_embedding_text_includes_title_and_content():
-    out = build_embedding_text("<h1>Title</h1>", "<p>First sentence. Second sentence.</p>")
+    # build_embedding_text expects already-cleaned content (as produced by the
+    # ingestion pipeline); the title is re-stripped defensively.
+    out = build_embedding_text("Title", "First sentence. Second sentence.")
     assert "Title" in out
     assert "First sentence" in out
+
+
+def test_make_preview_truncates_on_word_boundary():
+    cleaned = "word " * 100
+    preview = make_preview(cleaned, max_chars=30)
+    assert len(preview) <= 31  # 30 chars + ellipsis
+    assert preview.endswith("…")
+
+
+def test_make_preview_returns_full_when_short():
+    assert make_preview("short text") == "short text"

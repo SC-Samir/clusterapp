@@ -38,7 +38,7 @@
           <span class="chip date">{{ article.published_at.strftime('%Y-%m-%d %H:%M') }}</span>
         </div>
         <h2><a href="/articles/{{ article.id }}/view">{{ article.title }}</a></h2>
-        {% set preview = article.content|clean_text %}
+        {% set preview = article.content_preview %}
         <p class="excerpt">{{ preview[:240] }}{% if preview|length > 240 %}...{% endif %}</p>
         <a class="read-more" href="/articles/{{ article.id }}/view">Read article <span aria-hidden="true">→</span></a>
       </article>

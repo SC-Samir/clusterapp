@@ -27,6 +27,7 @@ class Article(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     url: Mapped[str] = mapped_column(String(1024), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_preview: Mapped[str] = mapped_column(Text, nullable=False, default="")
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.vector_dim), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

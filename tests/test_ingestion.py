@@ -13,6 +13,9 @@ class FakeEmbedder:
     def embed(self, text: str):
         return [0.1] * 384
 
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 384 for _ in texts]
+
 
 class FakeScalarResult:
     def __init__(self, items):
@@ -56,6 +59,7 @@ def build_existing_article() -> Article:
         title="Hello",
         url="https://example.com/a",
         content="World",
+        content_preview="World",
         published_at=datetime(2026, 5, 5, 10, 0, tzinfo=timezone.utc),
         embedding=[0.1] * 384,
     )

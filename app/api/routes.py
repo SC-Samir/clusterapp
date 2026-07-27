@@ -38,7 +38,7 @@ ARTICLE_LIST_LOAD = load_only(
     Article.source,
     Article.title,
     Article.url,
-    Article.content,
+    Article.content_preview,
     Article.published_at,
 )
 ARTICLE_DETAIL_LOAD = load_only(
@@ -75,15 +75,15 @@ RECOMMENDATION_ARTICLE_LOAD = load_only(
 )
 
 
-def invalidate_article_cache(article_id: Optional[int] = None, *, invalidate_sources: bool = False) -> None:
-    read_cache.invalidate_prefix("articles:list:")
-    read_cache.invalidate_prefix("home:")
+async def invalidate_article_cache(article_id: Optional[int] = None, *, invalidate_sources: bool = False) -> None:
+    await read_cache.invalidate_prefix("articles:list:")
+    await read_cache.invalidate_prefix("home:")
     if invalidate_sources:
-        source_cache.clear()
+        await source_cache.clear()
     if article_id is not None:
-        read_cache.invalidate_prefix(f"articles:detail:{article_id}")
-        read_cache.invalidate_prefix(f"articles:recommendations:{article_id}:")
-        read_cache.invalidate_prefix(f"articles:view:{article_id}")
+        await read_cache.invalidate_prefix(f"articles:detail:{article_id}")
+        await read_cache.invalidate_prefix(f"articles:recommendations:{article_id}:")
+        await read_cache.invalidate_prefix(f"articles:view:{article_id}")
 
 
 def get_embedder() -> EmbeddingService:
@@ -161,7 +161,7 @@ async def create_comment_or_404(
         if await db.get(Article, article_id) is None:
             raise HTTPException(status_code=404, detail="Article not found")
         raise
-    invalidate_article_cache(article_id)
+    await invalidate_article_cache(article_id)
     return CommentOut(
         id=row.id,
         article_id=row.article_id,
@@ -224,7 +224,7 @@ async def get_recommendations(
 async def reindex_article_route(article_id: int, db: AsyncSession = Depends(get_async_db)):
     article = await get_article_or_404(db, article_id, with_embedding=True)
     await reindex_article(db, article, get_embedder())
-    invalidate_article_cache(article_id)
+    await invalidate_article_cache(article_id)
     return ReindexArticleOut(article_id=article_id, reindexed=True)
 
 

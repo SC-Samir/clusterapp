@@ -25,7 +25,7 @@ class ArticleListItem(BaseModel):
     source: str
     title: str
     url: str
-    content: str
+    content_preview: str
     published_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

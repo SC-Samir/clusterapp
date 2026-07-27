@@ -26,3 +26,20 @@ class EmbeddingService:
     def embed(self, text: str) -> list[float]:
         vec = self.model.encode(text or "", normalize_embeddings=True)
         return vec.tolist()
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Encode a batch of texts in a single forward pass.
+
+        Returns one vector per input text, preserving order. Empty/whitespace
+        inputs are still encoded (the model handles them) so the output length
+        always matches the input length.
+        """
+        if not texts:
+            return []
+        vectors = self.model.encode(
+            [text or "" for text in texts],
+            batch_size=max(1, len(texts)),
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return [vec.tolist() for vec in vectors]

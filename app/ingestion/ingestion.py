@@ -1,14 +1,19 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from typing import Optional
 
 import feedparser
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Article
-from app.core.services.content_processing import build_embedding_text, strip_html
+from app.core.services.content_processing import (
+    build_embedding_text,
+    make_preview,
+    strip_html,
+)
 
 
 @dataclass
@@ -16,11 +21,7 @@ class IngestResult:
     ingested: int = 0
     updated: int = 0
     skipped: int = 0
-    failed_feeds: list[str] = None
-
-    def __post_init__(self) -> None:
-        if self.failed_feeds is None:
-            self.failed_feeds = []
+    failed_feeds: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -29,10 +30,13 @@ class NormalizedEntry:
     link: str
     title: str
     content_clean: str
+    content_preview: str
     published_at: datetime
 
 
 UPSERT_CHUNK_SIZE = 100
+# Cap parallel feed parses to avoid unbounded thread spawn on large feed lists.
+MAX_PARALLEL_FEEDS = 8
 
 
 def _entry_published(entry: feedparser.FeedParserDict) -> datetime:
@@ -66,23 +70,58 @@ def _normalize_feed_entries(entries: list[feedparser.FeedParserDict], result: In
             result.skipped += 1
             continue
 
+        preview = make_preview(content_clean)
         normalized.append(
             NormalizedEntry(
                 guid=guid,
                 link=link,
                 title=title,
                 content_clean=content_clean or "No content",
+                content_preview=preview,
                 published_at=_entry_published(entry),
             )
         )
     return normalized
 
 
-async def _embed_entry(embedder, entry: NormalizedEntry) -> list[float]:
-    return await asyncio.to_thread(
-        embedder.embed,
-        build_embedding_text(entry.title, entry.content_clean),
+@dataclass
+class ParsedFeed:
+    feed_url: str
+    source: str
+    entries: list[NormalizedEntry]
+    failed: bool = False
+
+
+async def _parse_one_feed(feed_url: str) -> ParsedFeed:
+    """Parse a single feed in a worker thread; returns a ParsedFeed result."""
+    try:
+        parsed = await asyncio.to_thread(feedparser.parse, feed_url)
+    except Exception:
+        return ParsedFeed(feed_url=feed_url, source=feed_url, entries=[], failed=True)
+
+    feed_meta = parsed.get("feed", {})
+    source = feed_meta.get("title", feed_url)
+    # _normalize_feed_entries mutates the shared IngestResult, but we normalize
+    # here in the event loop thread (CPU-light) to keep parsing parallel while
+    # avoiding a shared mutable counter across threads.
+    dummy = IngestResult()
+    entries = _normalize_feed_entries(parsed.get("entries", []), dummy)
+    return ParsedFeed(
+        feed_url=feed_url,
+        source=source,
+        entries=entries,
+        failed=False,
     )
+
+
+async def _embed_entries(
+    embedder, entries: list[NormalizedEntry]
+) -> list[list[float]]:
+    """Embed a chunk of entries in a single batched forward pass off-thread."""
+    if not entries:
+        return []
+    texts = [build_embedding_text(e.title, e.content_clean) for e in entries]
+    return await asyncio.to_thread(embedder.embed_batch, texts)
 
 
 async def _load_existing_articles(db: AsyncSession, entries: list[NormalizedEntry]) -> dict[str, Article]:
@@ -102,72 +141,87 @@ async def _load_existing_articles(db: AsyncSession, entries: list[NormalizedEntr
     return existing
 
 
+def _entry_changed(existing: Article, entry: NormalizedEntry, source: str) -> bool:
+    if existing.source != source:
+        return True
+    if existing.title != entry.title:
+        return True
+    if existing.url != entry.link:
+        return True
+    if existing.content != entry.content_clean:
+        return True
+    if existing.published_at != entry.published_at:
+        return True
+    if existing.content_preview != entry.content_preview:
+        return True
+    return False
+
+
 async def ingest_feeds(db: AsyncSession, feed_urls: list[str], embedder) -> IngestResult:
     result = IngestResult()
 
-    for feed_url in feed_urls:
-        try:
-            parsed = await asyncio.to_thread(feedparser.parse, feed_url)
-        except Exception:
-            result.failed_feeds.append(feed_url)
+    # Parse all feeds in parallel (bounded), each in its own thread.
+    sem = asyncio.Semaphore(MAX_PARALLEL_FEEDS)
+
+    async def _bounded_parse(feed_url: str) -> ParsedFeed:
+        async with sem:
+            return await _parse_one_feed(feed_url)
+
+    parsed_feeds = await asyncio.gather(*[_bounded_parse(url) for url in feed_urls])
+
+    for parsed in parsed_feeds:
+        if parsed.failed:
+            result.failed_feeds.append(parsed.feed_url)
             continue
 
-        if parsed.get("bozo"):
-            # Still attempt to process valid entries even if parser raised warnings.
-            pass
-
-        feed_meta = parsed.get("feed", {})
-        source = feed_meta.get("title", feed_url)
-        normalized_entries = _normalize_feed_entries(parsed.get("entries", []), result)
-
-        for start in range(0, len(normalized_entries), UPSERT_CHUNK_SIZE):
-            chunk = normalized_entries[start : start + UPSERT_CHUNK_SIZE]
+        for start in range(0, len(parsed.entries), UPSERT_CHUNK_SIZE):
+            chunk = parsed.entries[start : start + UPSERT_CHUNK_SIZE]
             existing_by_key = await _load_existing_articles(db, chunk)
-            new_articles: list[Article] = []
-            chunk_updated = 0
 
+            # Split chunk into new vs. existing entries. Only new entries (and
+            # existing entries whose text fields changed) need an embedding.
+            new_entries: list[NormalizedEntry] = []
+            existing_pairs: list[tuple[Article, NormalizedEntry]] = []
             for entry in chunk:
-                vector = await _embed_entry(embedder, entry)
                 existing = existing_by_key.get(f"guid:{entry.guid}") or existing_by_key.get(f"url:{entry.link}")
-
                 if existing is None:
-                    new_articles.append(
-                        Article(
-                            source=source,
-                            rss_guid=entry.guid,
-                            title=entry.title,
-                            url=entry.link,
-                            content=entry.content_clean,
-                            published_at=entry.published_at,
-                            embedding=vector,
-                        )
+                    new_entries.append(entry)
+                elif _entry_changed(existing, entry, parsed.source):
+                    existing_pairs.append((existing, entry))
+                # else: unchanged -> skip entirely (no embedding, no write)
+
+            # Batch-embed new entries in one forward pass.
+            new_vectors = await _embed_entries(embedder, new_entries)
+
+            new_articles: list[Article] = []
+            for entry, vector in zip(new_entries, new_vectors):
+                new_articles.append(
+                    Article(
+                        source=parsed.source,
+                        rss_guid=entry.guid,
+                        title=entry.title,
+                        url=entry.link,
+                        content=entry.content_clean,
+                        content_preview=entry.content_preview,
+                        published_at=entry.published_at,
+                        embedding=vector,
                     )
-                    result.ingested += 1
-                    continue
+                )
+                result.ingested += 1
 
-                changed = False
-                if existing.source != source:
-                    existing.source = source
-                    changed = True
-                if existing.title != entry.title:
-                    existing.title = entry.title
-                    changed = True
-                if existing.url != entry.link:
-                    existing.url = entry.link
-                    changed = True
-                if existing.content != entry.content_clean:
-                    existing.content = entry.content_clean
-                    changed = True
-                if existing.published_at != entry.published_at:
-                    existing.published_at = entry.published_at
-                    changed = True
-                if list(existing.embedding) != vector:
-                    existing.embedding = vector
-                    changed = True
-
-                if changed:
-                    result.updated += 1
-                    chunk_updated += 1
+            # Batch-embed changed existing entries in one forward pass.
+            changed_vectors = await _embed_entries(embedder, [e for _, e in existing_pairs])
+            chunk_updated = 0
+            for (existing, entry), vector in zip(existing_pairs, changed_vectors):
+                existing.source = parsed.source
+                existing.title = entry.title
+                existing.url = entry.link
+                existing.content = entry.content_clean
+                existing.content_preview = entry.content_preview
+                existing.published_at = entry.published_at
+                existing.embedding = vector
+                result.updated += 1
+                chunk_updated += 1
 
             if new_articles:
                 db.add_all(new_articles)
