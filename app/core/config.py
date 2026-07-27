@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parent
-DEFAULT_EMBEDDING_MODEL = str(APP_DIR / "models" / "all-MiniLM-L6-v2")
+DEFAULT_EMBEDDING_MODEL = str(PROJECT_ROOT / "models" / "all-MiniLM-L6-v2")
 
 
 class Settings(BaseSettings):

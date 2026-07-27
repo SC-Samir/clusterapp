@@ -1,4 +1,4 @@
-from app.services.content_processing import build_embedding_text, sentence_chunks, strip_html
+from app.core.services.content_processing import build_embedding_text, sentence_chunks, strip_html
 
 
 def test_strip_html_basic():

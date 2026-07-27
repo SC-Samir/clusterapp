@@ -1,9 +1,14 @@
 replicaCount: 3
 
 image:
-  repository: scsamir/newproject5-app
-  tag: v1
-  pullPolicy: IfNotPresent
+  api:
+    repository: scsamir/newproject5-app
+    tag: v1
+    pullPolicy: IfNotPresent
+  ingest:
+    repository: scsamir/newproject5-ingest
+    tag: v1
+    pullPolicy: IfNotPresent
 
 service:
   type: ClusterIP
@@ -20,7 +25,6 @@ ingress:
 appConfig:
   VECTOR_DIM: "384"
   RSS_FEEDS: "https://hnrss.org/frontpage,https://www.reddit.com/r/programming/.rss,https://techcrunch.com/feed/,https://www.theverge.com/rss/index.xml,https://feeds.arstechnica.com/arstechnica/index,https://www.infoq.com/feed/"
-  INGEST_INTERVAL_MINUTES: "30"
   EMBEDDING_MODEL: "/app/app/models/all-MiniLM-L6-v2"
 
 secrets:

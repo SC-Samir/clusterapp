@@ -17,4 +17,4 @@ cp .env.docker .env
 uv run alembic upgrade head
 
 echo "[5/5] Start API"
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload

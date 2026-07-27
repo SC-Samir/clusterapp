@@ -24,12 +24,20 @@ Demo application for LecPac presentation:
    ```
 4. Run app:
    ```bash
-   uv run uvicorn app.main:app --reload
+   uv run uvicorn app.api.main:app --reload
    ```
 
 Notes:
 - The embedding model is stored locally in `app/models/all-MiniLM-L6-v2`.
 - Local `.env` files should use `EMBEDDING_MODEL=app/models/all-MiniLM-L6-v2`.
+- Ingestion runs on demand (no in-process scheduler). Run manually:
+  ```bash
+  uv run python -m app.ingestion.cli ingest
+  ```
+- Reindex a single article:
+  ```bash
+  uv run python -m app.ingestion.cli reindex <article_id>
+  ```
 
 ## Local quick test with Docker Compose (Postgres + pgvector)
 
@@ -47,24 +55,25 @@ Notes:
    ```
 4. Start app:
    ```bash
-   uv run uvicorn app.main:app --reload
+   uv run uvicorn app.api.main:app --reload
    ```
 
 This mode runs PostgreSQL in Docker, but keeps the FastAPI app on your machine. It still uses the local model directory at `app/models/all-MiniLM-L6-v2`.
 
 ## Full Docker Compose stack
 
-Start the full stack (database + app container):
+Start the full stack (database + API container):
 ```bash
 docker compose up --build
 ```
 
 Notes:
+- `docker compose up --build` starts the API only; ingestion runs on demand.
 - The `app` container does not read `.env.docker`; its environment is defined directly in `docker-compose.yml`.
 - In the container, the model path is `/app/app/models/all-MiniLM-L6-v2`.
-- You can test ingestion with:
+- Run ingestion on demand:
   ```bash
-  curl -X POST http://127.0.0.1:8000/ingest/run
+  docker compose --profile ingest run --rm ingest
   ```
 
 Shortcut script:
@@ -79,7 +88,7 @@ Shortcut script:
 - `POST /articles/{id}/comments`
 - `GET /articles/{id}/recommendations`
 - `POST /articles/{id}/reindex`
-- `POST /ingest/run`
+
 
 ## UI routes
 
@@ -99,7 +108,7 @@ By default, `RSS_FEEDS` includes:
 
 ## Kubernetes (Outscale-compatible)
 
-1. Build/push image.
+1. Build/push image(s).
 2. Apply manifests:
    ```bash
    kubectl apply -f app/k8s/configmap.yaml
@@ -110,6 +119,8 @@ By default, `RSS_FEEDS` includes:
    kubectl apply -f app/k8s/cronjob.yaml
    ```
 
+The deployment runs the API only (no in-process scheduler). The CronJob runs `python -m app.ingestion.cli ingest` on a schedule.
+
 Use Scalingo DB URL in `DATABASE_URL` secret value.
 Set `EMBEDDING_MODEL` to `/app/app/models/all-MiniLM-L6-v2` in containerized environments.
 
@@ -117,7 +128,7 @@ Set `EMBEDDING_MODEL` to `/app/app/models/all-MiniLM-L6-v2` in containerized env
 
 1. Edit chart values:
    - `helm/lecpac-rss/values.yaml`
-   - Set image repository/tag, ingress host, and `secrets.DATABASE_URL`.
+   - Set `image.api` repository/tag, `image.ingest` repository/tag, ingress host, and `secrets.DATABASE_URL`.
    - Keep `appConfig.EMBEDDING_MODEL` pointing to `/app/app/models/all-MiniLM-L6-v2`.
 2. Install/upgrade:
    ```bash
@@ -127,3 +138,5 @@ Set `EMBEDDING_MODEL` to `/app/app/models/all-MiniLM-L6-v2` in containerized env
    ```bash
    kubectl get pods,svc,ingress
    ```
+
+There are now two images configured in `values.yaml`: `image.api` (FastAPI app) and `image.ingest` (ingestion CLI).

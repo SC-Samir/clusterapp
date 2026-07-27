@@ -5,7 +5,7 @@ import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
-from app.services.recommendations import recommend_similar_articles
+from app.api.services.recommendations import recommend_similar_articles
 
 
 class FakeArticle:
@@ -70,9 +70,9 @@ class FakeSelect:
 
 @pytest.mark.anyio
 async def test_recommendation_similarity_scores(monkeypatch):
-    monkeypatch.setattr("app.services.recommendations.Article", FakeArticleModel)
-    monkeypatch.setattr("app.services.recommendations.select", lambda *args, **kwargs: FakeSelect())
-    monkeypatch.setattr("app.services.recommendations.load_only", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.services.recommendations.Article", FakeArticleModel)
+    monkeypatch.setattr("app.api.services.recommendations.select", lambda *args, **kwargs: FakeSelect())
+    monkeypatch.setattr("app.api.services.recommendations.load_only", lambda *args, **kwargs: None)
     base = FakeArticle(1, 0.0)
     db = FakeDB()
 

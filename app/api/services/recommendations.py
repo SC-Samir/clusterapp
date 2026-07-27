@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
-from app.models import Article
+from app.core.models import Article
 
 
 async def recommend_similar_articles(

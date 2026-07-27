@@ -1,4 +1,4 @@
-from app.config import Settings
+from app.core.config import Settings
 
 
 def test_rss_feeds_parsing_with_big_pack_bundle():

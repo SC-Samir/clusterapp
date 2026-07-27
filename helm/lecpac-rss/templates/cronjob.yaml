@@ -12,8 +12,9 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: ingest-runner
-              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-              command: ["python", "-c", "import asyncio\nfrom app.database import AsyncSessionLocal\nfrom app.config import get_settings\nfrom app.services.ingestion import ingest_feeds\nfrom app.services.embeddings import EmbeddingService\n\nasync def main():\n    async with AsyncSessionLocal() as db:\n        await ingest_feeds(db, get_settings().parsed_feeds, EmbeddingService())\n\nasyncio.run(main())"]
+              image: "{{ .Values.image.ingest.repository }}:{{ .Values.image.ingest.tag }}"
+              imagePullPolicy: {{ .Values.image.ingest.pullPolicy }}
+              command: ["python", "-m", "app.ingestion.cli", "ingest"]
               envFrom:
                 - configMapRef:
                     name: {{ .Release.Name }}-config

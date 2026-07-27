@@ -19,19 +19,33 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     container_name: lecpac_app
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://lecpac:lecpac@db:5432/lecpac
-      VECTOR_DIM: 384
+      VECTOR_DIM: "384"
       RSS_FEEDS: https://hnrss.org/frontpage,https://www.reddit.com/r/programming/.rss,https://techcrunch.com/feed/,https://www.theverge.com/rss/index.xml,https://feeds.arstechnica.com/arstechnica/index,https://www.infoq.com/feed/
-      INGEST_INTERVAL_MINUTES: 30
       EMBEDDING_MODEL: /app/app/models/all-MiniLM-L6-v2
     ports:
       - "8000:8000"
+
+  ingest:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    container_name: lecpac_ingest
+    profiles: ["ingest"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://lecpac:lecpac@db:5432/lecpac
+      VECTOR_DIM: "384"
+      RSS_FEEDS: https://hnrss.org/frontpage,https://www.reddit.com/r/programming/.rss,https://techcrunch.com/feed/,https://www.theverge.com/rss/index.xml,https://feeds.arstechnica.com/arstechnica/index,https://www.infoq.com/feed/
+      EMBEDDING_MODEL: /app/app/models/all-MiniLM-L6-v2
 
 volumes:
   pgdata:

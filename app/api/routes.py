@@ -1,4 +1,3 @@
-import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
@@ -9,23 +8,22 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
-from app.config import get_settings
-from app.database import get_async_db
-from app.models import Article, Comment
-from app.schemas import (
+from app.core.config import get_settings
+from app.core.database import get_async_db
+from app.core.models import Article, Comment
+from app.core.schemas import (
     ArticleDetail,
     ArticleListItem,
     CommentCreate,
     CommentOut,
-    IngestRunOut,
     RecommendationOut,
     ReindexArticleOut,
 )
-from app.services.embeddings import EmbeddingService
-from app.services.cache import TTLCache
-from app.services.content_processing import build_embedding_text, strip_html
-from app.services.ingestion import ingest_feeds
-from app.services.recommendations import recommend_similar_articles
+from app.core.services.embeddings import EmbeddingService
+from app.api.services.cache import TTLCache
+from app.core.services.content_processing import strip_html
+from app.api.services.recommendations import recommend_similar_articles
+from app.ingestion.reindex import reindex_article
 
 router = APIRouter()
 settings = get_settings()
@@ -222,21 +220,10 @@ async def get_recommendations(
     )
 
 
-@router.post("/ingest/run", response_model=IngestRunOut)
-async def run_ingestion(db: AsyncSession = Depends(get_async_db)):
-    result = await ingest_feeds(db, settings.parsed_feeds, get_embedder())
-    invalidate_article_cache(invalidate_sources=True)
-    return IngestRunOut(**result.__dict__)
-
-
 @router.post("/articles/{article_id}/reindex", response_model=ReindexArticleOut)
-async def reindex_article(article_id: int, db: AsyncSession = Depends(get_async_db)):
+async def reindex_article_route(article_id: int, db: AsyncSession = Depends(get_async_db)):
     article = await get_article_or_404(db, article_id, with_embedding=True)
-    article.embedding = await asyncio.to_thread(
-        get_embedder().embed,
-        build_embedding_text(article.title, article.content),
-    )
-    await db.commit()
+    await reindex_article(db, article, get_embedder())
     invalidate_article_cache(article_id)
     return ReindexArticleOut(article_id=article_id, reindexed=True)
 

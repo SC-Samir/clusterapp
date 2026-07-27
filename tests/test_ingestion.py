@@ -5,8 +5,8 @@ import pytest
 
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
-from app.models import Article
-from app.services.ingestion import ingest_feeds
+from app.core.models import Article
+from app.ingestion.ingestion import ingest_feeds
 
 
 class FakeEmbedder:
@@ -77,7 +77,7 @@ async def test_ingest_basic(monkeypatch):
         "bozo": False,
     }
 
-    monkeypatch.setattr("app.services.ingestion.feedparser.parse", lambda _: fake_feed)
+    monkeypatch.setattr("app.ingestion.ingestion.feedparser.parse", lambda _: fake_feed)
 
     db = FakeDB()
     result = await ingest_feeds(db, ["https://example.com/rss"], FakeEmbedder())
@@ -107,7 +107,7 @@ async def test_ingest_updates_existing_when_changed(monkeypatch):
         "bozo": False,
     }
 
-    monkeypatch.setattr("app.services.ingestion.feedparser.parse", lambda _: fake_feed)
+    monkeypatch.setattr("app.ingestion.ingestion.feedparser.parse", lambda _: fake_feed)
 
     existing = build_existing_article()
     db = FakeDB(existing_articles=[existing])
@@ -136,7 +136,7 @@ async def test_ingest_skips_write_when_existing_unchanged(monkeypatch):
         "bozo": False,
     }
 
-    monkeypatch.setattr("app.services.ingestion.feedparser.parse", lambda _: fake_feed)
+    monkeypatch.setattr("app.ingestion.ingestion.feedparser.parse", lambda _: fake_feed)
 
     existing = build_existing_article()
     db = FakeDB(existing_articles=[existing])

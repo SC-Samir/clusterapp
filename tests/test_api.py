@@ -8,9 +8,9 @@ from sqlalchemy.sql.dml import Insert
 
 os.environ["DATABASE_URL"] = "sqlite:///./test.db"
 
-from app.database import get_async_db
-from app.main import app
-from app.models import Article
+from app.core.database import get_async_db
+from app.api.main import app
+from app.core.models import Article
 
 
 class FakeEmbedder:

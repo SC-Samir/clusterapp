@@ -7,8 +7,8 @@ import feedparser
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Article
-from app.services.content_processing import build_embedding_text, strip_html
+from app.core.models import Article
+from app.core.services.content_processing import build_embedding_text, strip_html
 
 
 @dataclass

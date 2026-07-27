@@ -6,8 +6,8 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.config import get_settings
-from app.database import Base
+from app.core.config import get_settings
+from app.core.database import Base
 
 settings = get_settings()
 
